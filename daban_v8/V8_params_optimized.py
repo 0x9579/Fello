@@ -16,7 +16,6 @@ import requests
 import json
 import re
 import logging
-from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from time import sleep
 import xml.etree.ElementTree as ET
@@ -26,16 +25,17 @@ import ast
 import math
 import pytz
 from itertools import islice
-from enum import IntEnum
-from typing import Dict, List, Optional, Any
 
 # ============================================================
 # 日志配置
 # ============================================================
 logger = logging.getLogger("DabanV8")
 logger.setLevel(logging.INFO)
+logger.propagate = False  # 不传播到 root logger，避免重复/空行
+logger.handlers = []  # 清除所有残留 handler
 _handler = logging.StreamHandler()
-_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+# _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
 logger.addHandler(_handler)
 
 # ============================================================
@@ -43,25 +43,25 @@ logger.addHandler(_handler)
 # ============================================================
 
 # 委托状态
-class OrderStatus(IntEnum):
+class OrderStatus(object):
     INVALID = 57  # 废单
 
 # 委托方向
-class OpDirection(IntEnum):
+class OpDirection(object):
     BUY_NORMAL = 23
     SELL_NORMAL = 24
     BUY_MARGIN = 33
     SELL_MARGIN = 34
 
 # 委托价格类型
-class PriceType(IntEnum):
+class PriceType(object):
     LIMIT = 11
     MARKET_SH = 42   # 上海最优五档即时成交剩余撤销
     MARKET_SZ = 44   # 深圳对手方最优价格委托（通用）
     MARKET_SZ2 = 46  # 深圳最优五档即时成交剩余撤销
 
 # 委托模式
-class OrderMode(IntEnum):
+class OrderMode(object):
     BY_AMOUNT = 1102  # 按金额
     BY_VOLUME = 1101  # 按数量
 
@@ -92,92 +92,93 @@ TRADE_RECORD_FILE = 'trade_records.json'
 # 全局状态定义
 # ============================================================
 
-@dataclass
-class StockMonitorState:
+class StockMonitorState(object):
     """持仓股票的盘中监控状态"""
-    price_history: list = field(default_factory=list)
-    last_price: float = 0.0
-    last_price1: float = 0.0
-    price_change_history: list = field(default_factory=list)
-    monitor_next_minute: bool = False
-    initial_price_for_monitor: Optional[float] = None
-    sum_zhangfu: float = 4.0
-    time_counter: int = 0
+    def __init__(self):
+        self.price_history = []
+        self.last_price = 0.0
+        self.last_price1 = 0.0
+        self.price_change_history = []
+        self.monitor_next_minute = False
+        self.initial_price_for_monitor = None
+        self.sum_zhangfu = 4.0
+        self.time_counter = 0
 
 
-@dataclass
-class StockCandidateState:
+class StockCandidateState(object):
     """候选股票的竞价阶段状态"""
-    price_history: list = field(default_factory=list)
-    last_price: float = 0.0
-    last_price1: float = 0.0
-    up_stop_price: float = 0.0
-    kp_stop_price: int = 0
-    yesterday_close: float = 1.0
-    kp_price: float = 0.0
-    jj_tag: int = 0
-    zuigao_price: float = 0.0
-    zuidi_price: float = 0.0
-    last_jj_price: float = 1.0
-    last_jj_volume: float = 1.0
-    last_jj_amount: float = 1.0
-    yesterday_volume: float = 1.0
-    yesterday_amount: float = 1.0
-    last_price_kaip: float = 1.0
-    last_volume_kaip: float = 1.0
-    price_change_history: list = field(default_factory=list)
-    monitor_next_minute: bool = False
-    initial_price_for_monitor: Optional[float] = None
-    sum_zhangfu: float = 9.5
-    time_counter: int = 0
-    mairu_tag: int = 0
-    orderid: int = 0
+    def __init__(self, yesterday_close=1.0, yesterday_volume=1.0, yesterday_amount=1.0):
+        self.price_history = []
+        self.last_price = 0.0
+        self.last_price1 = 0.0
+        self.up_stop_price = 0.0
+        self.kp_stop_price = 0
+        self.yesterday_close = yesterday_close
+        self.kp_price = 0.0
+        self.jj_tag = 0
+        self.zuigao_price = 0.0
+        self.zuidi_price = 0.0
+        self.last_jj_price = 1.0
+        self.last_jj_volume = 1.0
+        self.last_jj_amount = 1.0
+        self.yesterday_volume = yesterday_volume
+        self.yesterday_amount = yesterday_amount
+        self.last_price_kaip = 1.0
+        self.last_volume_kaip = 1.0
+        self.price_change_history = []
+        self.monitor_next_minute = False
+        self.initial_price_for_monitor = None
+        self.sum_zhangfu = 9.5
+        self.time_counter = 0
+        self.mairu_tag = 0
+        self.orderid = 0
 
 
-@dataclass
-class GlobalState:
+class GlobalState(object):
     """全局策略状态"""
-    banben: str = 'V2.7'
-    cese: int = 1
-    stock: list = field(default_factory=list)
-    positions: list = field(default_factory=list)
-    stocks_date2: dict = field(default_factory=dict)
-    tag: int = 0
-    tag1: int = 0
-    jine: float = 0.0
-    sum_xishu: float = 0.3
-    tag_fenzhong: int = 0
-    result: Any = None
-    stock_states: Dict[str, StockMonitorState] = field(default_factory=dict)
-    stock_states1: Dict[str, StockCandidateState] = field(default_factory=dict)
-    day: int = 0
-    count: int = 0
-    stocknum: int = 5
-    start: str = ''
-    end: str = ''
-    time_counter: int = 0
-    holdings: dict = field(default_factory=dict)
-    weight: list = field(default_factory=lambda: [0.1] * 10)
-    buypoint: dict = field(default_factory=dict)
-    money: float = 10000000.0
-    mairu_tag: int = 1       # 0-限价委托 1-市价委托
-    enddate: str = '2028-03-22'
-    profit: float = 0.0
-    opType: int = 0          # 0-普通账户 1-融资账户
-    yun_tag: int = 1         # 0-回测 1-实盘运行
-    ti_qian: int = 0         # 1-提前卖出
-    before_market_open: int = 0
-    before_market_stock: int = 0
-    buy_num: int = 10
-    per_money: float = 10000.0
-    xml_tag: int = 0
-    huoqu_tag: int = 1       # 0-QMT获取 1-聚宽获取
-    zijin_num: float = 10000.0
-    stock_jj: list = field(default_factory=list)
-    stock_mai: list = field(default_factory=list)
-    stock_pool: dict = field(default_factory=dict)
-    his_st: dict = field(default_factory=dict)
-    s: list = field(default_factory=list)
+    def __init__(self):
+        self.banben = 'V2.7'
+        self.cese = 1
+        self.stock = []
+        self.positions = []
+        self.stocks_date2 = {}
+        self.tag = 0
+        self.tag1 = 0
+        self.jine = 0.0
+        self.sum_xishu = 0.3
+        self.tag_fenzhong = 0
+        self.result = None
+        self.stock_states = {}
+        self.stock_states1 = {}
+        self.day = 0
+        self.count = 0
+        self.stocknum = 5
+        self.start = ''
+        self.end = ''
+        self.time_counter = 0
+        self.holdings = {}
+        self.weight = [0.1] * 10
+        self.buypoint = {}
+        self.money = 10000000.0
+        self.mairu_tag = 1       # 0-限价委托 1-市价委托
+        self.enddate = '2028-03-22'
+        self.profit = 0.0
+        self.opType = 0          # 0-普通账户 1-融资账户
+        self.yun_tag = 1         # 0-回测 1-实盘运行
+        self.ti_qian = 0         # 1-提前卖出
+        self.before_market_open = 0
+        self.before_market_stock = 0
+        self.buy_num = 10
+        self.per_money = 10000.0
+        self.xml_tag = 0
+        self.huoqu_tag = 1       # 0-QMT获取 1-聚宽获取
+        self.zijin_num = 10000.0
+        self.stock_jj = []
+        self.stock_mai = []
+        self.stock_pool = {}
+        self.his_st = {}
+        self.s = []
+        self.skip_filter = 1  # 1-跳过竞价筛选，直接买入股票池所有股票；0-正常筛选
 
 
 g = GlobalState()
@@ -877,17 +878,17 @@ def init(C):
 
     # XML 配置路径
     current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-    xml_path = os.path.abspath(os.path.join(current_dir, 'formulaLayout', '开盘打板运行版V8.xml'))
+    xml_path = os.path.abspath(os.path.join(current_dir, 'formulaLayout', '开盘打板运行版V8_never_read.xml'))
     if 'bin.x64' in xml_path:
         xml_path = xml_path.replace(r'\bin.x64', r'\python')
     logger.info("XML 文件路径: %s", xml_path)
 
     if not os.path.exists(xml_path):
         logger.error("XML文件不存在: %s", xml_path)
-        return
+        #return
     if not os.access(xml_path, os.R_OK):
         logger.error("无权限读取: %s", xml_path)
-        return
+        #return
 
     g.s = get_stock_list_in_sector("沪深300")
     g.holdings = {i: 0 for i in g.s}
@@ -901,6 +902,9 @@ def init(C):
         config = read_xml(xml_path)
         if config:
             g.zijin_num = int(config.get('zijin_num', {}).get('value', 0))
+        elif globals().get('buy_value') is not None:
+            g.zijin_num = globals().get('buy_value')
+            logger.error("XML解析失败，使用全局变量 buy_value 作为每只股票买入金额: %s", g.zijin_num)
         else:
             logger.error("无法解析XML，初始化失败")
             return
@@ -911,7 +915,7 @@ def init(C):
 
     C.run_time("buysell", "1nSecond", "2019-10-14 13:20:00")
     g.stock_pool = get_stock_pool_from_panel(C)
-    logger.info("股票池: %s", list(g.stock_pool.keys()))
+    logger.info("从参数面板获取的股票池: %s", list(g.stock_pool.keys()))
 
 
 def after_init(C):
@@ -966,17 +970,28 @@ def buysell(C):
 
     # 集合竞价筛选
     if "09:25:05" <= current_time <= "09:26:59" and g.tag == 0:
-        handle_data0(C, g.stock, date)
-        if g.count == len(g.stock):
+        if g.skip_filter == 1:
+            # 跳过筛选，直接买入股票池所有股票
             g.tag = 1
-            logger.info("集合竞价结果: %s", g.stock_jj)
-            g.stock_mai = g.stock_jj
+            g.stock_mai = list(g.stock)
+            logger.info("[skip_filter] 跳过竞价筛选，直接买入: %s", g.stock_mai)
             if g.stock_mai:
-                logger.info("今日买入标的: %s", g.stock_mai)
                 buyzaos(C, g.stock_mai)
                 account_detail(C)
             else:
-                logger.info("今日无合适打板标的")
+                logger.info("股票池为空，无标的可买")
+        else:
+            handle_data0(C, g.stock, date)
+            if g.count == len(g.stock):
+                g.tag = 1
+                logger.info("集合竞价结果: %s", g.stock_jj)
+                g.stock_mai = g.stock_jj
+                if g.stock_mai:
+                    logger.info("今日买入标的: %s", g.stock_mai)
+                    buyzaos(C, g.stock_mai)
+                    account_detail(C)
+                else:
+                    logger.info("今日无合适打板标的")
 
     if current_time == "09:30:07":
         feidan_xiadan(C, g.stock)
